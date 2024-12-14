@@ -1,0 +1,96 @@
+from transformers import BertTokenizer, BertForSequenceClassification, Trainer, TrainingArguments
+from sklearn.model_selection import train_test_split
+from datasets import Dataset
+import torch
+
+# 데이터 준비 (샘플 데이터 추가)
+data = {
+    "text": [
+        "How to lose weight quickly?",  # 미용, 건강, 식음료
+        "Best recipe for chocolate cake?",  # 미용, 건강, 식음료
+        "Top destinations in Europe for solo travelers.",  # 여행, 여가, 취미
+        "I want to learn photography as a hobby.",  # 여행, 여가, 취미
+        "How to save money on rent?",  # 주거, 생활, 사람 관계
+        "Tips for maintaining good friendships.",  # 주거, 생활, 사람 관계
+        "How to start investing in stocks?",  # 경제 활동, 상품/상거래
+        "Best deals on smartphones this year.",  # 경제 활동, 상품/상거래
+        "What are the most popular movies this year?",  # 엔터테인먼트, 오락, 예술
+        "How to draw realistic portraits?",  # 엔터테인먼트, 오락, 예술
+        "What are the theories behind social constructivism?",  # 인문사회
+        "Explain the history of World War II.",  # 인문사회
+        "What is quantum computing?",  # 기술과학
+        "How do rockets work?",  # 기술과학
+    ],
+    "label": [0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6],  # 주제별 레이블
+}
+
+# 주제 매핑
+labels_to_topics = {
+    0: "미용,건강,식음료",
+    1: "여행,여가,취미",
+    2: "주거,생활,사람관계",
+    3: "경제활동,상품/상거래",
+    4: "엔터테인먼트,오락,예술",
+    5: "인문사회",
+    6: "기술과학",
+}
+
+# 데이터프레임을 데이터셋으로 변환
+dataset = Dataset.from_dict(data)
+
+# BERT tokenizer 로드
+tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+
+# 데이터 토크나이즈
+def tokenize_function(examples):
+    return tokenizer(examples["text"], padding="max_length", truncation=True)
+
+tokenized_datasets = dataset.map(tokenize_function, batched=True)
+
+# 학습/검증 데이터 분리
+train_dataset, test_dataset = tokenized_datasets.train_test_split(test_size=0.2).values()
+
+# BERT 모델 초기화
+model = BertForSequenceClassification.from_pretrained("bert-base-uncased", num_labels=len(labels_to_topics))
+
+# 훈련 설정
+training_args = TrainingArguments(
+    output_dir="./results",
+    evaluation_strategy="epoch",
+    learning_rate=2e-5,
+    per_device_train_batch_size=8,
+    per_device_eval_batch_size=8,
+    num_train_epochs=3,
+    weight_decay=0.01,
+    logging_dir="./logs",
+    logging_steps=10,
+    save_strategy="epoch",
+)
+
+# Trainer 객체 생성
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=train_dataset,
+    eval_dataset=test_dataset,
+    tokenizer=tokenizer,
+)
+
+# 모델 학습
+trainer.train()
+
+# 사용자 입력 처리 함수
+def predict_topic(input_text):
+    inputs = tokenizer(input_text, return_tensors="pt", truncation=True, padding=True, max_length=128)
+    outputs = model(**inputs)
+    logits = outputs.logits
+    predicted_class = torch.argmax(logits, dim=1).item()
+    return labels_to_topics[predicted_class]
+
+# 테스트
+while True:
+    user_input = input("Enter a sentence (or 'exit' to quit): ")
+    if user_input.lower() == "exit":
+        break
+    topic = predict_topic(user_input)
+    print(f"The topic is: {topic}")
